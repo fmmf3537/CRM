@@ -33,3 +33,4 @@ e2e/.auth/
 *.db-wal
 *.db-shm
 server.log
+.env
