@@ -1,0 +1,35 @@
+services:
+  db-dev:
+    image: postgres:16-alpine
+    container_name: crm-db-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: crm_dev
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5434:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d crm_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 可选：开发模式同时启动后端，方便调试
+  # app-dev:
+  #   build: .
+  #   ports:
+  #     - "3007:3007"
+  #   environment:
+  #     - NODE_ENV=development
+  #     - PORT=3007
+  #     - DATABASE_URL=postgresql://postgres:postgres@db-dev:5432/crm_dev?schema=public
+  #     - JWT_SECRET=dev-secret-change-me
+  #   depends_on:
+  #     db-dev:
+  #       condition: service_healthy
+
+volumes:
+  postgres_dev_data:

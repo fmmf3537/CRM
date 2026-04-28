@@ -1,29 +1,32 @@
 services:
   db:
     image: postgres:16-alpine
+    container_name: crm-db-prod
     environment:
-      POSTGRES_USER: crm
-      POSTGRES_PASSWORD: crm_password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: crm
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
+    # 生产数据库不暴露到宿主机，仅允许 Docker 内部网络访问
+    expose:
+      - "5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d crm"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   app:
     build: .
+    container_name: crm-app-prod
     ports:
       - "3006:3006"
     environment:
       - NODE_ENV=production
       - PORT=3006
-      - DATABASE_URL=postgresql://crm:crm_password@db:5432/crm?schema=public
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/crm?schema=public
       - JWT_SECRET=${JWT_SECRET:-skytech-crm-change-me-in-production}
     depends_on:
       db:
