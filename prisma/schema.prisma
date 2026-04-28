@@ -1,0 +1,424 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum CustomerGrade {
+  A
+  B
+  C
+  D
+}
+
+enum CustomerStatus {
+  POTENTIAL
+  FOLLOWING
+  WON
+  LOST
+}
+
+enum Industry {
+  AGRICULTURE          // 农业植保
+  SECURITY             // 城市安防
+  LOGISTICS            // 物流配送
+  SURVEYING            // 测绘勘探
+  ENVIRONMENT          // 环境监测
+  FILM                 // 影视航拍
+  CONSTRUCTION         // 建筑工程
+  ENERGY               // 能源电力
+  TELECOM              // 通信巡检
+  FIREFIGHTING         // 消防救援
+  MINING               // 矿山开采
+  FORESTRY             // 林业巡护
+  MARITIME             // 海事巡查
+  TRANSPORTATION       // 交通运输
+  REAL_ESTATE          // 房地产开发
+  TOURISM              // 旅游观光
+  EMERGENCY            // 应急管理
+  MILITARY             // 国防军事
+  SCIENTIFIC_RESEARCH  // 科学研究
+  EDUCATION            // 教育培训
+}
+
+enum Scale {
+  LARGE
+  MEDIUM
+  SMALL
+  MICRO
+}
+
+enum Role {
+  SALES      // 普通销售
+  MANAGER    // 主管
+  EXECUTIVE  // 高管
+  ADMIN      // 管理员
+}
+
+enum LeadSource {
+  WEBSITE        // 官网
+  EXHIBITION     // 展会
+  PHONE          // 电话咨询
+  REFERRAL       // 客户推荐
+  ADVERTISEMENT  // 广告投放
+  WALK_IN        // 上门拜访
+  OTHER          // 其他
+}
+
+enum LeadStatus {
+  NEW         // 新建
+  CONTACTED   // 已联系
+  QUALIFIED   // 已确认意向
+  CONVERTED   // 已转化
+  ABANDONED   // 已放弃
+}
+
+enum AssignStatus {
+  UNASSIGNED  // 未分配
+  ASSIGNED    // 已分配
+}
+
+enum Priority {
+  HIGH    // 高
+  MEDIUM  // 中
+  LOW     // 低
+}
+
+enum DecisionRole {
+  DECISION_MAKER    // 决策人
+  INFLUENCER        // 影响人
+  USER              // 使用人
+  TECHNICAL_CONTACT // 技术联系人
+  PURCHASER         // 采购人
+}
+
+enum ActivityType {
+  PHONE          // 电话沟通
+  VISIT          // 上门拜访
+  DEMO           // 产品演示
+  DINNER         // 商务宴请
+  EXHIBITION     // 展会活动
+  MESSAGE        // 消息沟通
+  NEGOTIATION    // 商务谈判
+  OTHER          // 其他
+}
+
+enum ActivityResult {
+  VALID      // 有效
+  INVALID    // 无效
+  PENDING    // 待跟进
+}
+
+enum OpportunityStage {
+  STAGE_01   // 线索
+  STAGE_02   // 需求确认
+  STAGE_03   // 方案报价
+  STAGE_04   // 商务谈判
+  STAGE_05   // 签约成交
+  STAGE_99   // 流失
+}
+
+enum OpportunityStatus {
+  IN_PROGRESS  // 进行中
+  WON          // 已赢单
+  LOST         // 已输单
+}
+
+enum TargetType {
+  ANNUAL    // 年度
+  QUARTERLY // 季度
+  MONTHLY   // 月度
+}
+
+enum PaymentStatus {
+  PENDING  // 待回款
+  PAID     // 已回款
+}
+
+enum NotificationType {
+  NEW_LEAD_ASSIGNMENT  // 新线索分配
+  FOLLOW_UP_REMINDER   // 跟进提醒
+  OVERDUE_REMINDER     // 逾期提醒
+  TARGET_REMINDER      // 目标提醒
+  STAGE_ADVANCE        // 阶段推进
+  SYSTEM_NOTICE        // 系统公告
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  name      String
+  role      Role     @default(SALES)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customers     Customer[]
+  leads         Lead[]
+  activities     Activity[]
+  notifications  Notification[]
+  opportunities  Opportunity[]
+  stageHistories StageHistory[]
+  targets        Target[]
+  targetsCreated Target[]   @relation("TargetCreatedBy")
+  achievements   Achievement[]
+
+  @@map("users")
+}
+
+model Customer {
+  id             Int            @id @default(autoincrement())
+  name           String
+  alias          String?
+  industry       Industry
+  scale          Scale          @default(MEDIUM)
+  region         String
+  address        String?
+  source         String?
+  grade          CustomerGrade  @default(C)
+  status         CustomerStatus @default(POTENTIAL)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  lastFollowUpAt DateTime?
+
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id])
+
+  contacts      Contact[]
+  businessInfo  BusinessInfo?
+  activities    Activity[]
+  opportunities Opportunity[]
+  achievements  Achievement[]
+
+  @@index([ownerId])
+  @@index([industry])
+  @@index([region])
+  @@index([status])
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model Contact {
+  id           Int          @id @default(autoincrement())
+  name         String
+  title        String?
+  phone        String?
+  email        String?
+  wechat       String?
+  decisionRole DecisionRole @default(TECHNICAL_CONTACT)
+  isPrimary    Boolean      @default(false)
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("contacts")
+}
+
+model BusinessInfo {
+  id                 Int     @id @default(autoincrement())
+  requirements       String?
+  interestedProducts String?
+  budget             String?
+  purchaseTime       String?
+  competitors        String?
+  specialRequirements String?
+
+  customerId Int      @unique
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("business_info")
+}
+
+model Lead {
+  id                  Int          @id @default(autoincrement())
+  leadNo              String       @unique
+  name                String
+  contactName         String
+  contactPhone        String?
+  contactEmail        String?
+  contactTitle        String?
+  source              LeadSource   @default(OTHER)
+  status              LeadStatus   @default(NEW)
+  assignStatus        AssignStatus @default(UNASSIGNED)
+  priority            Priority     @default(MEDIUM)
+  industry            Industry?
+  region              String?
+  budget              String?
+  notes               String?
+  assigneeId          Int?
+  assignee            User?        @relation(fields: [assigneeId], references: [id])
+  assignedAt          DateTime?
+  protectExpiry       DateTime?
+  invalidReason       String?
+  convertedCustomerId Int?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  activities  Activity[]
+
+  @@index([assigneeId])
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+model Activity {
+  id               Int             @id @default(autoincrement())
+  type             ActivityType
+  title            String
+  content          String?
+  time             DateTime
+  duration         Int?            // 分钟
+  location         String?
+  result           ActivityResult  @default(PENDING)
+  score            Float           @default(0)
+  nextFollowUpAt   DateTime?
+  nextFollowUpNote String?
+  customerId       Int?
+  customer         Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId           Int?
+  lead             Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  createdById      Int
+  createdBy        User            @relation(fields: [createdById], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([createdById])
+  @@index([customerId])
+  @@index([leadId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("activities")
+}
+
+model Notification {
+  id          Int              @id @default(autoincrement())
+  userId      Int
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  title       String
+  content     String?
+  readAt      DateTime?
+  relatedId   Int?
+  relatedType String?
+  createdAt   DateTime         @default(now())
+
+  @@index([userId])
+  @@index([readAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Config {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   // JSON string
+  updatedAt DateTime @updatedAt
+  updatedById Int?
+
+  @@map("configs")
+}
+
+model Opportunity {
+  id               Int               @id @default(autoincrement())
+  name             String
+  customerId       Int
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  amount           Float             @default(0)
+  currency         String            @default("CNY")
+  stage            OpportunityStage  @default(STAGE_01)
+  status           OpportunityStatus @default(IN_PROGRESS)
+  winRate          Int               @default(10)
+  expectedCloseDate DateTime?
+  ownerId          Int
+  owner            User              @relation(fields: [ownerId], references: [id])
+  description      String?
+  source           String?
+  competitor       String?
+  closedAt         DateTime?
+  closeReason      String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  stageHistories StageHistory[]
+  achievements   Achievement[]
+
+  @@index([ownerId])
+  @@index([customerId])
+  @@index([stage])
+  @@index([status])
+  @@index([createdAt])
+  @@map("opportunities")
+}
+
+model StageHistory {
+  id            Int              @id @default(autoincrement())
+  opportunityId Int
+  opportunity   Opportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  fromStage     OpportunityStage
+  toStage       OpportunityStage
+  changedAt     DateTime         @default(now())
+  remarks       String?
+  changedById   Int
+  changedBy     User             @relation(fields: [changedById], references: [id])
+
+  @@map("stage_histories")
+}
+
+model Target {
+  id        Int        @id @default(autoincrement())
+  type      TargetType
+  year      Int
+  quarter   Int?       // 季度 1-4
+  month     Int?       // 月份 1-12
+  amount    Float      @default(0)
+  currency  String     @default("CNY")
+  ownerId   Int
+  owner     User       @relation(fields: [ownerId], references: [id])
+  createdById Int
+  createdBy   User     @relation("TargetCreatedBy", fields: [createdById], references: [id])
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([type, year, quarter, month, ownerId])
+  @@map("targets")
+}
+
+model Achievement {
+  id              Int            @id @default(autoincrement())
+  name            String
+  customerId      Int
+  customer        Customer       @relation(fields: [customerId], references: [id])
+  opportunityId   Int?
+  opportunity     Opportunity?   @relation(fields: [opportunityId], references: [id])
+  amount          Float          @default(0)
+  currency        String         @default("CNY")
+  contractDate    DateTime
+  createdById     Int
+  createdBy       User           @relation(fields: [createdById], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  payments Payment[]
+
+  @@index([createdById])
+  @@index([customerId])
+  @@index([contractDate])
+  @@map("achievements")
+}
+
+model Payment {
+  id              Int           @id @default(autoincrement())
+  achievementId   Int
+  achievement     Achievement   @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  amount          Float         @default(0)
+  paymentDate     DateTime?
+  status          PaymentStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+
+  @@map("payments")
+}
