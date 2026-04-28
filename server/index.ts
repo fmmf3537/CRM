@@ -14,7 +14,7 @@ import notificationRoutes from './routes/notifications.js'
 import adminRoutes from './routes/admin.js'
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 3006
 
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
