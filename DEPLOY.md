@@ -1,18 +1,17 @@
-# CRM 系统生产环境部署指南
+# 辰航卓越 CRM 部署指南
 
 ## 目录
 
-- [方案一：Docker Compose 快速部署（推荐）](#方案一docker-compose-快速部署)
-- [方案二：手动部署到云服务器](#方案二手动部署到云服务器)
-- [HTTPS 配置](#https-配置)
+- [快速启动（Docker Compose）](#快速启动docker-compose)
+- [环境变量说明](#环境变量说明)
+- [数据库迁移](#数据库迁移)
 - [数据库备份与恢复](#数据库备份与恢复)
 - [更新与回滚](#更新与回滚)
-- [环境变量说明](#环境变量说明)
 - [故障排查](#故障排查)
 
 ---
 
-## 方案一：Docker Compose 快速部署（推荐）
+## 快速启动（Docker Compose）
 
 ### 1. 服务器准备
 
@@ -25,60 +24,58 @@
 ### 2. 安装 Docker
 
 ```bash
-# Ubuntu / Debian
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 newgrp docker
-
-# 验证
-docker --version
-docker-compose --version
 ```
 
-### 3. 拉取代码
+### 3. 拉取代码并配置
 
 ```bash
-git clone <your-repo-url> crm
-cd crm
-```
+git clone git@github.com:fmmf3537/CRM.git
+cd CRM
 
-### 4. 配置环境变量
-
-```bash
 # 生成强密码（务必修改！）
 openssl rand -base64 32
 
 # 创建环境文件
 cat > .env << 'EOF'
+DATABASE_URL="postgresql://crm:crm_password@db:5432/crm?schema=public"
 JWT_SECRET=your-strong-secret-here-change-it
 EOF
 ```
 
 > ⚠️ **安全警告**：`JWT_SECRET` 必须使用随机生成的强密码，泄露后任何人可伪造登录凭证。
 
-### 5. 启动服务
+### 4. 启动服务
 
 ```bash
-# 构建并后台启动
 docker-compose up --build -d
+```
 
+服务组成：
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| `app` | 3001 | CRM 后端 + 前端 |
+| `db` | 5432 (内部) | PostgreSQL 16 |
+
+```bash
 # 查看日志
 docker-compose logs -f app
+docker-compose logs -f db
 
-# 查看运行状态
+# 查看状态
 docker-compose ps
 ```
 
-### 6. 验证部署
+### 5. 验证部署
 
 ```bash
-# 健康检查
-curl http://localhost/api/health
-
-# 应返回：{"status":"ok","time":"..."}
+curl http://localhost:3001/api/health
+# → {"status":"ok","time":"..."}
 ```
 
-浏览器访问 `http://<服务器IP>`
+浏览器访问 `http://<服务器IP>:3001`
 
 默认账号：
 | 角色 | 用户名 | 密码 |
@@ -90,118 +87,54 @@ curl http://localhost/api/health
 
 ---
 
-## 方案二：手动部署到云服务器
+## 环境变量说明
 
-### 1. 环境准备
+| 变量 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `DATABASE_URL` | **是** | - | PostgreSQL 连接字符串 |
+| `JWT_SECRET` | **是** | - | JWT 签名密钥，**必须修改** |
+| `PORT` | 否 | `3001` | 服务监听端口 |
+| `NODE_ENV` | 否 | `development` | 运行环境 |
 
-```bash
-# Ubuntu 22.04
-sudo apt update
-sudo apt install -y nodejs npm nginx sqlite3
+### Docker 环境 DATABASE_URL 格式
 
-# 安装 Node 22（推荐）
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-node --version  # v22.x
+```
+postgresql://用户名:密码@db:5432/数据库名?schema=public
 ```
 
-### 2. 构建前端
-
-```bash
-cd crm
-npm install
-npx prisma generate
-npm run build
-# 产物在 dist/ 目录
-```
-
-### 3. 配置后端
-
-```bash
-# 安装生产依赖
-npm ci
-
-# 创建数据目录
-mkdir -p data
-
-# 配置环境变量
-cat > .env << 'EOF'
-NODE_ENV=production
-PORT=3001
-DATABASE_URL=file:./data/prod.db
-JWT_SECRET=your-strong-secret-here-change-it
-EOF
-```
-
-### 4. 使用 PM2 守护进程
-
-```bash
-sudo npm install -g pm2
-
-# 启动（使用 tsx 运行 TypeScript）
-pm2 start "npx tsx server/index.ts" --name crm-api
-
-# 开机自启
-pm2 startup
-pm2 save
-
-# 查看状态
-pm2 status
-pm2 logs crm-api
-```
-
-### 5. 配置 Nginx
-
-```bash
-sudo tee /etc/nginx/sites-available/crm << 'EOF'
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    client_max_body_size 10m;
-
-    location / {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-EOF
-
-sudo ln -s /etc/nginx/sites-available/crm /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
+`db` 是 docker-compose 中 PostgreSQL 服务的名称（内部 DNS 解析）。
 
 ---
 
-## HTTPS 配置
+## 数据库迁移
 
-### 方式一：Let's Encrypt 免费证书（推荐）
+### 首次部署
+
+首次启动时，数据库是空的。进入 app 容器执行迁移：
 
 ```bash
-sudo apt install -y certbot python3-certbot-nginx
-
-# 申请证书（替换为你的域名）
-sudo certbot --nginx -d your-domain.com
-
-# 自动续期测试
-sudo certbot renew --dry-run
+docker-compose exec app npx prisma migrate deploy
 ```
 
-### 方式二：手动证书
+> 生产环境建议使用 `prisma migrate deploy`，它会应用已创建的迁移文件，不会修改 schema。
+
+### 开发环境迁移
+
+开发中修改了 `prisma/schema.prisma` 后：
 
 ```bash
-# 放置证书到 ssl 目录
-mkdir -p ssl
-cp your-cert.pem ssl/cert.pem
-cp your-key.pem ssl/key.pem
+# 创建新迁移
+npx prisma migrate dev --name 描述名称
 
-# 取消 nginx.conf 中 HTTPS 配置的注释，重新加载
-docker-compose restart nginx
+# 同步到数据库（不创建迁移文件）
+npx prisma db push
+```
+
+### 查看数据库
+
+```bash
+# 进入 PostgreSQL 容器
+docker-compose exec db psql -U crm -d crm -c "\dt"
 ```
 
 ---
@@ -214,18 +147,16 @@ docker-compose restart nginx
 sudo tee /usr/local/bin/backup-crm.sh << 'EOF'
 #!/bin/bash
 BACKUP_DIR="/backup/crm"
-DB_FILE="/path/to/crm/data/prod.db"
 DATE=$(date +%Y%m%d_%H%M%S)
-
 mkdir -p "$BACKUP_DIR"
 
-# 备份 SQLite 数据库
-cp "$DB_FILE" "$BACKUP_DIR/prod_$DATE.db"
+# pg_dump 备份
+docker-compose exec -T db pg_dump -U crm -d crm > "$BACKUP_DIR/crm_$DATE.sql"
 
-# 保留最近 30 天的备份
-find "$BACKUP_DIR" -name "prod_*.db" -mtime +30 -delete
+# 保留最近 30 天
+find "$BACKUP_DIR" -name "crm_*.sql" -mtime +30 -delete
 
-echo "Backup completed: prod_$DATE.db"
+echo "Backup completed: crm_$DATE.sql"
 EOF
 
 sudo chmod +x /usr/local/bin/backup-crm.sh
@@ -237,24 +168,22 @@ crontab -l 2>/dev/null | { cat; echo "0 2 * * * /usr/local/bin/backup-crm.sh >> 
 ### 手动备份
 
 ```bash
-# Docker 部署
-docker-compose exec app sh -c "cp /app/data/prod.db /app/data/prod.db.backup.$(date +%Y%m%d)"
-
-# 手动部署
-cp data/prod.db data/prod.db.backup.$(date +%Y%m%d)
+# 导出 SQL
+docker-compose exec -T db pg_dump -U crm -d crm > crm_backup.sql
 ```
 
 ### 恢复备份
 
 ```bash
-# 停止服务
-docker-compose down
+# 停止应用
+docker-compose stop app
 
-# 恢复数据文件
-cp /backup/crm/prod_20260101_020000.db data/prod.db
+# 清空并恢复数据库
+docker-compose exec -T db psql -U crm -d crm -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+docker-compose exec -T db psql -U crm -d crm < crm_backup.sql
 
 # 重新启动
-docker-compose up -d
+docker-compose up -d app
 ```
 
 ---
@@ -264,41 +193,27 @@ docker-compose up -d
 ### 更新应用
 
 ```bash
-cd crm
+cd CRM
 git pull origin main
 
-# Docker 方式
+# 重新构建并启动
 docker-compose down
 docker-compose up --build -d
 
-# 手动方式
-npm ci
-npm run build
-pm2 restart crm-api
+# 应用新迁移（如有）
+docker-compose exec app npx prisma migrate deploy
 ```
 
 ### 回滚
 
 ```bash
-# Docker 方式：回退到上一个镜像
-docker-compose down
-docker-compose up -d
+# 回退代码
+git log --oneline -5
+git checkout <commit-hash>
 
-# 或者恢复数据库后重新构建
-cp data/prod.db.backup.xxx data/prod.db
+# 重新构建
 docker-compose up --build -d
 ```
-
----
-
-## 环境变量说明
-
-| 变量 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `PORT` | 否 | `3001` | 服务监听端口 |
-| `NODE_ENV` | 否 | `development` | 运行环境 |
-| `DATABASE_URL` | 否 | `file:./dev.db` | SQLite 数据库路径 |
-| `JWT_SECRET` | **是** | - | JWT 签名密钥，**必须修改** |
 
 ---
 
@@ -315,23 +230,24 @@ docker-compose logs --tail=100 app
 # 2. 权限问题：sudo chown -R $USER:$USER data/
 ```
 
-### 数据库锁定
+### 数据库连接失败
 
 ```bash
-# 如果看到 "database is locked" 错误
-# 停止服务后删除 WAL 文件
-rm data/prod.db-journal data/prod.db-wal data/prod.db-shm 2>/dev/null
+# 检查 PostgreSQL 是否运行
+docker-compose exec db pg_isready -U crm -d crm
+
+# 检查环境变量
+docker-compose exec app env | grep DATABASE
 ```
 
-### 502 Bad Gateway
+### 迁移失败
 
 ```bash
-# 检查后端是否正常运行
-curl http://127.0.0.1:3001/api/health
+# 重置迁移状态（开发环境慎用）
+docker-compose exec app npx prisma migrate reset --force
 
-# 检查 Nginx 配置
-sudo nginx -t
-sudo systemctl status nginx
+# 仅部署已有迁移（生产环境）
+docker-compose exec app npx prisma migrate deploy
 ```
 
 ### 清理磁盘空间
@@ -341,25 +257,14 @@ sudo systemctl status nginx
 docker system prune -a
 
 # 清理旧备份
-find /backup/crm -name "*.db" -mtime +30 -delete
+find /backup/crm -name "*.sql" -mtime +30 -delete
 ```
-
----
-
-## 安全建议
-
-1. **修改默认密码**：部署后立即修改 admin 和 sales1 的密码
-2. **使用强 JWT_SECRET**：建议 32 位以上随机字符串
-3. **启用 HTTPS**：生产环境必须使用 HTTPS
-4. **防火墙配置**：只开放 80/443 端口
-5. **定期备份**：数据库每日自动备份
-6. **监控日志**：关注异常登录和错误日志
 
 ---
 
 ## 技术栈
 
 - **前端**：React 19 + Vite + Tailwind CSS + React Router
-- **后端**：Express + Prisma 6 + SQLite
+- **后端**：Express + Prisma 6 + **PostgreSQL 16**
 - **测试**：Jest + Supertest + Playwright
-- **部署**：Docker + Docker Compose + Nginx
+- **部署**：Docker + Docker Compose
