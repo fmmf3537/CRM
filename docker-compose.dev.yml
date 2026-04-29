@@ -1,3 +1,5 @@
+name: crm-dev
+
 services:
   db-dev:
     image: postgres:16-alpine

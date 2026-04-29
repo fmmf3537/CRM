@@ -11,7 +11,7 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=3001
+ENV PORT=3006
 
 COPY package*.json ./
 RUN npm ci
@@ -21,6 +21,6 @@ RUN npx prisma generate
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 
-EXPOSE 3001
+EXPOSE 3006
 
 CMD ["npx", "tsx", "server/index.ts"]
