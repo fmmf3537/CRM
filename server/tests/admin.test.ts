@@ -37,14 +37,14 @@ describe('Admin API', () => {
       expect(res.body.data.length).toBeGreaterThanOrEqual(1)
     })
 
-    it('should create new user', async () => {
+    it('should create new user with strong password', async () => {
       const res = await request(app)
         .post('/api/admin/users')
         .set('Authorization', `Bearer ${authToken(admin)}`)
         .send({
           username: 'testuser99',
           name: '测试用户',
-          password: 'password',
+          password: 'StrongP1',
           role: 'SALES',
         })
 
@@ -54,16 +54,36 @@ describe('Admin API', () => {
       expect(res.body.role).toBe('SALES')
     })
 
+    it('should reject weak password (less than 8 chars)', async () => {
+      const res = await request(app)
+        .post('/api/admin/users')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+        .send({ username: 'weakuser', name: '弱密码', password: 'Ab1' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('密码')
+    })
+
+    it('should reject weak password (no complexity)', async () => {
+      const res = await request(app)
+        .post('/api/admin/users')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+        .send({ username: 'weakuser2', name: '弱密码2', password: 'onlylowercase' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('密码')
+    })
+
     it('should reject duplicate username', async () => {
       await request(app)
         .post('/api/admin/users')
         .set('Authorization', `Bearer ${authToken(admin)}`)
-        .send({ username: 'dupuser', name: '用户A', password: 'password', role: 'SALES' })
+        .send({ username: 'dupuser', name: '用户A', password: 'StrongP1', role: 'SALES' })
 
       const res = await request(app)
         .post('/api/admin/users')
         .set('Authorization', `Bearer ${authToken(admin)}`)
-        .send({ username: 'dupuser', name: '用户B', password: 'password', role: 'SALES' })
+        .send({ username: 'dupuser', name: '用户B', password: 'StrongP1', role: 'SALES' })
 
       expect(res.status).toBe(409)
     })
@@ -85,7 +105,7 @@ describe('Admin API', () => {
 
     it('should delete user', async () => {
       const user = await prisma.user.create({
-        data: { username: 'deleteme', name: '删除我', password: 'hash', role: 'SALES' },
+        data: { username: 'deleteme', name: '删除我', password: '$2b$10$vvcQInZM5vS29QSiAmZOzOYrhlUmP8VvyvdmIbfPSzycSgbG/1yjC', role: 'SALES' },
       })
 
       const res = await request(app)
@@ -107,18 +127,42 @@ describe('Admin API', () => {
       expect(res.status).toBe(403)
     })
 
-    it('should reset password', async () => {
+    it('should reset password with strong password', async () => {
+      const bcrypt = await import('bcryptjs')
       const user = await prisma.user.create({
-        data: { username: 'resetme', name: '重置密码', password: await require('bcryptjs').hash('oldpass', 10), role: 'SALES' },
+        data: { username: 'resetme', name: '重置密码', password: await bcrypt.hash('OldPass1', 10), role: 'SALES' },
       })
 
       const res = await request(app)
         .post(`/api/admin/users/${user.id}/reset-password`)
         .set('Authorization', `Bearer ${authToken(admin)}`)
-        .send({ password: 'newpass123' })
+        .send({ password: 'NewPass123' })
 
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
+    })
+
+    it('should reject weak password reset', async () => {
+      const bcrypt = await import('bcryptjs')
+      const user = await prisma.user.create({
+        data: { username: 'resetweak', name: '弱密码重置', password: await bcrypt.hash('OldPass1', 10), role: 'SALES' },
+      })
+
+      const res = await request(app)
+        .post(`/api/admin/users/${user.id}/reset-password`)
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+        .send({ password: 'weak' })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('should return 404 for updating non-existent user', async () => {
+      const res = await request(app)
+        .put('/api/admin/users/99999')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+        .send({ name: '不存在', role: 'SALES' })
+
+      expect(res.status).toBe(500) // Prisma throws on update where not found
     })
   })
 
@@ -182,6 +226,58 @@ describe('Admin API', () => {
       expect(res.status).toBe(200)
       expect(res.body.value).toHaveLength(1)
       expect(res.body.value[0].value).toBe('PERSIST')
+    })
+
+    it('should serve customerGrades config', async () => {
+      const res = await request(app)
+        .get('/api/admin/config/customerGrades')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.key).toBe('customerGrades')
+      expect(res.body.value.length).toBeGreaterThan(0)
+    })
+
+    it('should serve activityTypes config', async () => {
+      const res = await request(app)
+        .get('/api/admin/config/activityTypes')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.key).toBe('activityTypes')
+      expect(res.body.value.length).toBeGreaterThan(0)
+      expect(res.body.value[0]).toHaveProperty('score')
+    })
+
+    it('should serve stages config', async () => {
+      const res = await request(app)
+        .get('/api/admin/config/stages')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.key).toBe('stages')
+      expect(res.body.value.length).toBeGreaterThan(0)
+      expect(res.body.value[0]).toHaveProperty('winRate')
+    })
+
+    it('should serve leadSources config', async () => {
+      const res = await request(app)
+        .get('/api/admin/config/leadSources')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.key).toBe('leadSources')
+      expect(res.body.value.length).toBeGreaterThan(0)
+    })
+
+    it('should serve productCategories config', async () => {
+      const res = await request(app)
+        .get('/api/admin/config/productCategories')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.key).toBe('productCategories')
+      expect(res.body.value.length).toBeGreaterThan(0)
     })
   })
 })

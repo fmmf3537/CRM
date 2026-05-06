@@ -48,7 +48,7 @@ describe('Customer API', () => {
         .send({ industry: 'AGRICULTURE', region: '北京' })
 
       expect(res.status).toBe(400)
-      expect(res.body.error).toContain('客户名称')
+      expect(res.body.error).toContain('为必填项')
     })
   })
 
@@ -212,6 +212,119 @@ describe('Customer API', () => {
 
       const deleted = await prisma.customer.findUnique({ where: { id: customer.id } })
       expect(deleted).toBeNull()
+    })
+
+    it('should return 403 when non-owner non-manager tries to delete', async () => {
+      const customer = await prisma.customer.create({
+        data: { name: '他人客户的删除测试', industry: 'ENERGY', region: '广州', ownerId: sales2.user.id },
+      })
+
+      const res = await request(app)
+        .delete(`/api/customers/${customer.id}`)
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for non-existent customer', async () => {
+      const res = await request(app)
+        .delete('/api/customers/99999')
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 400 for invalid ID', async () => {
+      const res = await request(app)
+        .delete('/api/customers/invalid')
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('GET /api/customers/export', () => {
+    it('should export customers as CSV', async () => {
+      await prisma.customer.create({
+        data: { name: '导出测试公司', industry: 'AGRICULTURE', region: '北京', ownerId: sales1.user.id },
+      })
+
+      const res = await request(app)
+        .get('/api/customers/export')
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toContain('text/csv')
+      expect(res.text).toContain('客户名称')
+      expect(res.text).toContain('导出测试公司')
+    })
+
+    it('should respect filters in export', async () => {
+      await prisma.customer.createMany({
+        data: [
+          { name: '农业公司', industry: 'AGRICULTURE', region: '北京', ownerId: sales1.user.id },
+          { name: '物流公司', industry: 'LOGISTICS', region: '上海', ownerId: sales1.user.id },
+        ],
+      })
+
+      const res = await request(app)
+        .get('/api/customers/export?industry=AGRICULTURE')
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.text).toContain('农业公司')
+      expect(res.text).not.toContain('物流公司')
+    })
+  })
+
+  describe('GET /api/customers filters', () => {
+    beforeEach(async () => {
+      await prisma.customer.createMany({
+        data: [
+          { name: '北京A公司', industry: 'AGRICULTURE', region: '北京', grade: 'A', status: 'WON', ownerId: sales1.user.id },
+          { name: '上海B公司', industry: 'SECURITY', region: '上海', grade: 'B', status: 'FOLLOWING', ownerId: sales2.user.id },
+        ],
+      })
+    })
+
+    it('should filter by region', async () => {
+      const res = await request(app)
+        .get('/api/customers?region=上海')
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].region).toBe('上海')
+    })
+
+    it('should filter by grade', async () => {
+      const res = await request(app)
+        .get('/api/customers?grade=A')
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].grade).toBe('A')
+    })
+
+    it('should filter by status', async () => {
+      const res = await request(app)
+        .get('/api/customers?status=WON')
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].status).toBe('WON')
+    })
+
+    it('should filter by ownerId', async () => {
+      const res = await request(app)
+        .get(`/api/customers?ownerId=${sales2.user.id}`)
+        .set('Authorization', `Bearer ${sales1.token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].ownerId).toBe(sales2.user.id)
     })
   })
 

@@ -1,6 +1,14 @@
 import type { _Request, Response, NextFunction } from 'express'
 import type { AuthRequest } from './auth.js'
 
+function sanitizeString(input: string): string {
+  return input
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .trim()
+}
+
 export function validateBody(schema: Record<string, 'string' | 'number' | 'boolean' | 'email'>) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     const errors: string[] = []
@@ -19,6 +27,10 @@ export function validateBody(schema: Record<string, 'string' | 'number' | 'boole
           errors.push(`${key} 格式不正确`)
         }
       }
+      // Auto-sanitize string fields
+      if (type === 'string' && typeof value === 'string') {
+        req.body[key] = sanitizeString(value)
+      }
     }
     if (errors.length > 0) {
       res.status(400).json({ success: false, message: errors.join('; '), error: errors.join('; ') })
@@ -28,10 +40,4 @@ export function validateBody(schema: Record<string, 'string' | 'number' | 'boole
   }
 }
 
-export function sanitizeString(input: string): string {
-  return input
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .trim()
-}
+export { sanitizeString }

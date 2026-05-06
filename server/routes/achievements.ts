@@ -1,15 +1,12 @@
 import { Router } from 'express'
 import type { Response } from 'express'
 import { prisma } from '../db.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { authMiddleware, canModify } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
+import { invalidateCache } from '../middleware/cache.js'
 
 const router = Router()
 router.use(authMiddleware)
-
-function isManagerPlus(req: AuthRequest): boolean {
-  return ['MANAGER', 'EXECUTIVE', 'ADMIN'].includes(req.user!.role)
-}
 
 // GET /api/achievements
 router.get('/', async (req: AuthRequest, res: Response) => {
@@ -73,6 +70,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // POST /api/achievements
 router.post('/', async (req: AuthRequest, res: Response) => {
+  invalidateCache('/api/achievements')
   const { name, customerId, opportunityId, amount, currency, contractDate, payments } = req.body
 
   if (!name || !customerId || !contractDate) {
@@ -130,12 +128,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // PUT /api/achievements/:id
 router.put('/:id', async (req: AuthRequest, res: Response) => {
+  invalidateCache('/api/achievements')
   const id = parseInt(req.params.id, 10)
   if (isNaN(id)) { res.status(400).json({ error: '无效的战绩ID' }); return }
 
   const existing = await prisma.achievement.findUnique({ where: { id } })
   if (!existing) { res.status(404).json({ error: '业绩记录不存在' }); return }
-  if (existing.createdById !== req.user!.id && !isManagerPlus(req)) {
+  if (existing.createdById !== req.user!.id && !['MANAGER', 'EXECUTIVE', 'ADMIN'].includes(req.user!.role)) {
     res.status(403).json({ error: '无权修改此业绩记录' })
     return
   }
@@ -182,6 +181,27 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     res.json(updated)
   } catch (err: any) {
     res.status(500).json({ error: '更新业绩失败', message: err.message })
+  }
+})
+
+// DELETE /api/achievements/:id
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  invalidateCache('/api/achievements')
+  const id = parseInt(req.params.id, 10)
+  if (isNaN(id)) { res.status(400).json({ error: '无效的战绩ID' }); return }
+
+  const existing = await prisma.achievement.findUnique({ where: { id } })
+  if (!existing) { res.status(404).json({ error: '业绩记录不存在' }); return }
+  if (!canModify(req, existing.createdById)) {
+    res.status(403).json({ error: '无权删除此业绩记录' })
+    return
+  }
+
+  try {
+    await prisma.achievement.delete({ where: { id } })
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(500).json({ error: '删除业绩失败', message: err.message })
   }
 })
 

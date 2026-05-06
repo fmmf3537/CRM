@@ -4,6 +4,7 @@ import { prisma } from '../db.js'
 import { authMiddleware, requireRole } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
 import { cacheMiddleware, invalidateCache } from '../middleware/cache.js'
+import { validateBody } from '../middleware/validator.js'
 import * as XLSX from 'xlsx'
 
 const router = Router()
@@ -105,13 +106,9 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 })
 
 // POST /api/leads - Create
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', validateBody({ name: 'string', contactName: 'string' }), async (req: AuthRequest, res: Response) => {
   invalidateCache('/api/leads')
   const { name, contactName, contactPhone, contactEmail, contactTitle, source, priority, industry, region, budget, notes } = req.body
-  if (!name || !contactName) {
-    res.status(400).json({ error: '公司名称和联系人姓名为必填项' })
-    return
-  }
 
   try {
     const leadNo = await generateLeadNo()
@@ -197,6 +194,18 @@ router.post('/:id/assign', requireRole('ADMIN', 'MANAGER', 'EXECUTIVE'), async (
     include: { assignee: { select: { id: true, name: true } } },
   })
 
+  // Notify assignee
+  await prisma.notification.create({
+    data: {
+      userId: parseInt(assigneeId, 10),
+      type: 'NEW_LEAD_ASSIGNMENT',
+      title: `新线索分配: ${lead.name}`,
+      content: `您被分配了一个新线索「${lead.name}」，请及时跟进处理。`,
+      relatedId: id,
+      relatedType: 'LEAD',
+    },
+  })
+
   res.json(updated)
 })
 
@@ -226,6 +235,18 @@ router.post('/:id/claim', async (req: AuthRequest, res: Response) => {
       status: 'CONTACTED',
     },
     include: { assignee: { select: { id: true, name: true } } },
+  })
+
+  // Notify claimer
+  await prisma.notification.create({
+    data: {
+      userId: req.user!.id,
+      type: 'NEW_LEAD_ASSIGNMENT',
+      title: `线索认领成功: ${lead.name}`,
+      content: `您已成功认领线索「${lead.name}」，请及时跟进处理。`,
+      relatedId: id,
+      relatedType: 'LEAD',
+    },
   })
 
   res.json(updated)

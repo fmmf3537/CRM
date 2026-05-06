@@ -307,6 +307,18 @@ router.post('/:id/advance', async (req: AuthRequest, res: Response) => {
     })
   })
 
+  // Notify opportunity owner about stage advance
+  await prisma.notification.create({
+    data: {
+      userId: opportunity.ownerId,
+      type: 'STAGE_ADVANCE',
+      title: `商机阶段推进: ${opportunity.name}`,
+      content: `商机「${opportunity.name}」已从 ${opportunity.stage} 推进到 ${toStage}。`,
+      relatedId: id,
+      relatedType: 'OPPORTUNITY',
+    },
+  })
+
   res.json(updated)
 })
 

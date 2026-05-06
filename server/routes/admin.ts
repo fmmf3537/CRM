@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '../db.js'
 import { authMiddleware, requireRole } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
+import { validateBody } from '../middleware/validator.js'
 
 const router = Router()
 router.use(authMiddleware)
@@ -21,10 +22,14 @@ router.get('/users', async (_req: AuthRequest, res: Response) => {
 })
 
 // POST /api/admin/users - Create user
-router.post('/users', async (req: AuthRequest, res: Response) => {
+router.post('/users', validateBody({ username: 'string', name: 'string', password: 'string' }), async (req: AuthRequest, res: Response) => {
   const { username, name, password, role } = req.body
-  if (!username || !name || !password) {
-    res.status(400).json({ error: '用户名、姓名和密码为必填项' })
+  if (!password || password.length < 8) {
+    res.status(400).json({ error: '密码至少8位，需包含大小写字母和数字' })
+    return
+  }
+  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+    res.status(400).json({ error: '密码需包含大小写字母和数字' })
     return
   }
 
@@ -91,8 +96,12 @@ router.post('/users/:id/reset-password', async (req: AuthRequest, res: Response)
   const id = parseInt(req.params.id, 10)
   const { password } = req.body
   if (isNaN(id)) { res.status(400).json({ error: '无效的用户ID' }); return }
-  if (!password || password.length < 4) {
-    res.status(400).json({ error: '密码至少4位' })
+  if (!password || password.length < 8) {
+    res.status(400).json({ error: '密码至少8位，需包含大小写字母和数字' })
+    return
+  }
+  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+    res.status(400).json({ error: '密码需包含大小写字母和数字' })
     return
   }
 

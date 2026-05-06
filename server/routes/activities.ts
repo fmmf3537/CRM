@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import type { Response } from 'express'
 import { prisma } from '../db.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { authMiddleware, canModify } from '../middleware/auth.js'
+import { invalidateCache } from '../middleware/cache.js'
 import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
@@ -30,6 +31,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     startDate,
     endDate,
     result,
+    keyword,
   } = req.query as Record<string, string>
 
   const pageNum = Math.max(1, parseInt(page, 10))
@@ -41,6 +43,12 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   if (leadId) where.leadId = parseInt(leadId, 10)
   if (type) where.type = type
   if (result) where.result = result
+  if (keyword) {
+    where.OR = [
+      { title: { contains: keyword } },
+      { content: { contains: keyword } },
+    ]
+  }
   if (startDate || endDate) {
     where.time = {}
     if (startDate) where.time.gte = new Date(startDate)
@@ -243,6 +251,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // POST /api/activities - Create
 router.post('/', async (req: AuthRequest, res: Response) => {
+  invalidateCache('/api/activities')
   const { type, title, content, time, duration, location, result, customerId, leadId, nextFollowUpAt, nextFollowUpNote } = req.body
 
   if (!type || !title || !time) {
@@ -310,12 +319,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // PUT /api/activities/:id
 router.put('/:id', async (req: AuthRequest, res: Response) => {
+  invalidateCache('/api/activities')
   const id = parseInt(req.params.id, 10)
   if (isNaN(id)) { res.status(400).json({ error: '无效的活动ID' }); return }
 
   const existing = await prisma.activity.findUnique({ where: { id } })
   if (!existing) { res.status(404).json({ error: '活动不存在' }); return }
-  if (existing.createdById !== req.user!.id && !['MANAGER', 'EXECUTIVE', 'ADMIN'].includes(req.user!.role)) {
+  if (!canModify(req, existing.createdById)) {
     res.status(403).json({ error: '无权修改此活动' })
     return
   }
@@ -356,12 +366,13 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
 // DELETE /api/activities/:id
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  invalidateCache('/api/activities')
   const id = parseInt(req.params.id, 10)
   if (isNaN(id)) { res.status(400).json({ error: '无效的活动ID' }); return }
 
   const existing = await prisma.activity.findUnique({ where: { id } })
   if (!existing) { res.status(404).json({ error: '活动不存在' }); return }
-  if (existing.createdById !== req.user!.id && !['MANAGER', 'EXECUTIVE', 'ADMIN'].includes(req.user!.role)) {
+  if (!canModify(req, existing.createdById)) {
     res.status(403).json({ error: '无权删除此活动' })
     return
   }

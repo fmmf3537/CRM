@@ -370,7 +370,7 @@ describe('E2E Scenarios', () => {
         .send({
           username: 'e2enewuser',
           name: 'E2E新用户',
-          password: 'password',
+          password: 'E2ePass1',
           role: 'SALES',
         })
 
@@ -422,6 +422,160 @@ describe('E2E Scenarios', () => {
         .set('Authorization', `Bearer ${authToken(sales1)}`)
 
       expect(res.status).toBe(403)
+    })
+  })
+
+  describe('Scenario 9: Password Change Flow', () => {
+    it('should change password and login with new password', async () => {
+      // Create a test user
+      const bcrypt = await import('bcryptjs')
+      const user = await prisma.user.create({
+        data: {
+          username: 'pwdscenario',
+          name: '密码场景测试',
+          password: await bcrypt.hash('OldPass1', 10),
+          role: 'SALES',
+        },
+      })
+      const userToken = authToken({ id: user.id, username: 'pwdscenario', name: '密码场景测试', role: 'SALES' })
+
+      // Change password
+      const changeRes = await request(app)
+        .put('/api/auth/password')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ oldPassword: 'OldPass1', newPassword: 'NewPass2' })
+
+      expect(changeRes.status).toBe(200)
+      expect(changeRes.body.success).toBe(true)
+
+      // Login with new password
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ username: 'pwdscenario', password: 'NewPass2' })
+
+      expect(loginRes.status).toBe(200)
+      expect(loginRes.body.token).toBeDefined()
+
+      // Cleanup
+      await prisma.user.delete({ where: { id: user.id } })
+    })
+  })
+
+  describe('Scenario 10: Profile Update Flow', () => {
+    it('should update profile and persist across token refresh', async () => {
+      const bcrypt = await import('bcryptjs')
+      const user = await prisma.user.create({
+        data: {
+          username: 'profilescenario',
+          name: '原名称',
+          password: await bcrypt.hash('TestPass1', 10),
+          role: 'SALES',
+        },
+      })
+      const userToken = authToken({ id: user.id, username: 'profilescenario', name: '原名称', role: 'SALES' })
+
+      // Update profile
+      const updateRes = await request(app)
+        .put('/api/auth/profile')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ name: '新显示名称' })
+
+      expect(updateRes.status).toBe(200)
+      expect(updateRes.body.user.name).toBe('新显示名称')
+      expect(updateRes.body.token).toBeDefined()
+
+      // Verify via /me with new token
+      const meRes = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${updateRes.body.token}`)
+
+      expect(meRes.status).toBe(200)
+      expect(meRes.body.name).toBe('新显示名称')
+
+      // Cleanup
+      await prisma.user.delete({ where: { id: user.id } })
+    })
+  })
+
+  describe('Scenario 11: Notification Delete and Broadcast', () => {
+    it('should broadcast and delete notification', async () => {
+      // Admin broadcasts
+      const broadcastRes = await request(app)
+        .post('/api/notifications/broadcast')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+        .send({ title: '场景测试公告', content: '测试广播内容', userIds: [sales1.id] })
+
+      expect(broadcastRes.status).toBe(200)
+      expect(broadcastRes.body.count).toBe(1)
+
+      // Sales1 reads notification
+      const listRes = await request(app)
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(listRes.body.data.length).toBeGreaterThanOrEqual(1)
+      const notificationId = listRes.body.data[0].id
+
+      // Sales1 deletes notification
+      const deleteRes = await request(app)
+        .delete(`/api/notifications/${notificationId}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(deleteRes.status).toBe(200)
+
+      // Verify deleted
+      const deleted = await prisma.notification.findUnique({ where: { id: notificationId } })
+      expect(deleted).toBeNull()
+    })
+  })
+
+  describe('Scenario 12: Target and Achievement Lifecycle', () => {
+    it('should create, update, and delete target and achievement', async () => {
+      // Create customer first
+      const customer = await prisma.customer.create({
+        data: { name: '生命周期测试客户', industry: 'AGRICULTURE', region: '北京', ownerId: sales1.id },
+      })
+
+      // Create target
+      const targetRes = await request(app)
+        .post('/api/targets')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+        .send({ type: 'MONTHLY', year: 2026, month: 6, amount: 500000, ownerId: sales1.id })
+
+      expect(targetRes.status).toBe(201)
+      const targetId = targetRes.body.id
+
+      // Create achievement
+      const achievementRes = await request(app)
+        .post('/api/achievements')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ name: '生命周期战绩', customerId: customer.id, amount: 300000, contractDate: '2026-06-15' })
+
+      expect(achievementRes.status).toBe(201)
+      const achievementId = achievementRes.body.id
+
+      // Update achievement
+      const updateRes = await request(app)
+        .put(`/api/achievements/${achievementId}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ amount: 400000 })
+
+      expect(updateRes.status).toBe(200)
+      expect(updateRes.body.amount).toBe(400000)
+
+      // Delete achievement
+      const delAchievementRes = await request(app)
+        .delete(`/api/achievements/${achievementId}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(delAchievementRes.status).toBe(200)
+
+      // Delete target
+      const delTargetRes = await request(app)
+        .delete(`/api/targets/${targetId}`)
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(delTargetRes.status).toBe(200)
     })
   })
 })

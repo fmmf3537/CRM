@@ -208,6 +208,285 @@ describe('Performance API', () => {
     })
   })
 
+  describe('DELETE /api/targets/:id', () => {
+    it('should delete target with admin role', async () => {
+      const target = await prisma.target.create({
+        data: { type: 'MONTHLY', year: 2026, month: 5, amount: 500000, ownerId: sales1.id, createdById: admin.id },
+      })
+
+      const res = await request(app)
+        .delete(`/api/targets/${target.id}`)
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+
+      const deleted = await prisma.target.findUnique({ where: { id: target.id } })
+      expect(deleted).toBeNull()
+    })
+
+    it('should reject delete by non-manager', async () => {
+      const target = await prisma.target.create({
+        data: { type: 'MONTHLY', year: 2026, month: 5, amount: 500000, ownerId: sales1.id, createdById: admin.id },
+      })
+
+      const res = await request(app)
+        .delete(`/api/targets/${target.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for non-existent target', async () => {
+      const res = await request(app)
+        .delete('/api/targets/99999')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 400 for invalid ID', async () => {
+      const res = await request(app)
+        .delete('/api/targets/invalid')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('GET /api/targets filters', () => {
+    it('should filter by ownerId', async () => {
+      await prisma.target.create({
+        data: { type: 'ANNUAL', year: 2026, amount: 1000000, ownerId: sales1.id, createdById: admin.id },
+      })
+      await prisma.target.create({
+        data: { type: 'ANNUAL', year: 2026, amount: 2000000, ownerId: sales2.id, createdById: admin.id },
+      })
+
+      const res = await request(app)
+        .get(`/api/targets?ownerId=${sales1.id}`)
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].ownerId).toBe(sales1.id)
+    })
+
+    it('should filter by type', async () => {
+      await prisma.target.create({
+        data: { type: 'ANNUAL', year: 2026, amount: 1000000, ownerId: sales1.id, createdById: admin.id },
+      })
+      await prisma.target.create({
+        data: { type: 'QUARTERLY', year: 2026, quarter: 2, amount: 300000, ownerId: sales1.id, createdById: admin.id },
+      })
+
+      const res = await request(app)
+        .get('/api/targets?type=QUARTERLY')
+        .set('Authorization', `Bearer ${authToken(admin)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].type).toBe('QUARTERLY')
+    })
+  })
+
+  describe('GET /api/achievements/:id', () => {
+    it('should return single achievement with payments', async () => {
+      const achievement = await prisma.achievement.create({
+        data: {
+          name: '详情战绩',
+          customerId,
+          amount: 300000,
+          contractDate: new Date('2026-04-15'),
+          createdById: sales1.id,
+          payments: { create: { amount: 150000, paymentDate: new Date('2026-04-20'), status: 'PAID' } },
+        },
+      })
+
+      const res = await request(app)
+        .get(`/api/achievements/${achievement.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.name).toBe('详情战绩')
+      expect(res.body.payments).toHaveLength(1)
+      expect(res.body.payments[0].status).toBe('PAID')
+    })
+
+    it('should return 404 for non-existent achievement', async () => {
+      const res = await request(app)
+        .get('/api/achievements/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(404)
+    })
+  })
+
+  describe('PUT /api/achievements/:id', () => {
+    it('should update achievement fields', async () => {
+      const achievement = await prisma.achievement.create({
+        data: { name: '旧名称', customerId, amount: 200000, contractDate: new Date('2026-04-10'), createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .put(`/api/achievements/${achievement.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ name: '新名称', amount: 300000 })
+
+      expect(res.status).toBe(200)
+      expect(res.body.name).toBe('新名称')
+      expect(res.body.amount).toBe(300000)
+    })
+
+    it('should update payments in achievement', async () => {
+      const achievement = await prisma.achievement.create({
+        data: {
+          name: '回款更新测试',
+          customerId,
+          amount: 500000,
+          contractDate: new Date('2026-05-01'),
+          createdById: sales1.id,
+          payments: { create: { amount: 200000, status: 'PENDING' } },
+        },
+      })
+
+      const res = await request(app)
+        .put(`/api/achievements/${achievement.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({
+          payments: [
+            { amount: 200000, paymentDate: '2026-05-15', status: 'PAID' },
+            { amount: 300000, paymentDate: '2026-06-15', status: 'PENDING' },
+          ],
+        })
+
+      expect(res.status).toBe(200)
+      expect(res.body.payments).toHaveLength(2)
+      expect(res.body.payments[0].status).toBe('PAID')
+    })
+
+    it('should return 403 when non-owner non-manager tries to update', async () => {
+      const achievement = await prisma.achievement.create({
+        data: { name: '他人战绩', customerId, amount: 200000, contractDate: new Date('2026-04-10'), createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .put(`/api/achievements/${achievement.id}`)
+        .set('Authorization', `Bearer ${authToken(sales2)}`)
+        .send({ name: '篡改' })
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for non-existent achievement', async () => {
+      const res = await request(app)
+        .put('/api/achievements/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ name: '不存在的' })
+
+      expect(res.status).toBe(404)
+    })
+  })
+
+  describe('DELETE /api/achievements/:id', () => {
+    it('should delete achievement', async () => {
+      const achievement = await prisma.achievement.create({
+        data: { name: '待删除战绩', customerId, amount: 100000, contractDate: new Date('2026-04-01'), createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .delete(`/api/achievements/${achievement.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+
+      const deleted = await prisma.achievement.findUnique({ where: { id: achievement.id } })
+      expect(deleted).toBeNull()
+    })
+
+    it('should return 403 when non-owner non-manager tries to delete', async () => {
+      const achievement = await prisma.achievement.create({
+        data: { name: '他人战绩', customerId, amount: 200000, contractDate: new Date('2026-04-10'), createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .delete(`/api/achievements/${achievement.id}`)
+        .set('Authorization', `Bearer ${authToken(sales2)}`)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for non-existent achievement', async () => {
+      const res = await request(app)
+        .delete('/api/achievements/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 400 for invalid ID', async () => {
+      const res = await request(app)
+        .delete('/api/achievements/invalid')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('GET /api/achievements filter', () => {
+    it('should filter by keyword', async () => {
+      await prisma.achievement.create({
+        data: { name: '关键词测试战绩', customerId, amount: 100000, contractDate: new Date('2026-04-01'), createdById: sales1.id },
+      })
+      await prisma.achievement.create({
+        data: { name: '另一个战绩', customerId, amount: 200000, contractDate: new Date('2026-04-02'), createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .get('/api/achievements?keyword=关键词')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].name).toContain('关键词')
+    })
+
+    it('should filter by date range', async () => {
+      await prisma.achievement.create({
+        data: { name: '4月战绩', customerId, amount: 100000, contractDate: new Date('2026-04-10'), createdById: sales1.id },
+      })
+      await prisma.achievement.create({
+        data: { name: '5月战绩', customerId, amount: 200000, contractDate: new Date('2026-05-10'), createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .get('/api/achievements?startDate=2026-05-01&endDate=2026-05-31')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].name).toBe('5月战绩')
+    })
+
+    it('should filter by createdById', async () => {
+      await prisma.achievement.create({
+        data: { name: 'S1战绩', customerId, amount: 100000, contractDate: new Date('2026-04-10'), createdById: sales1.id },
+      })
+      await prisma.achievement.create({
+        data: { name: 'S2战绩', customerId, amount: 200000, contractDate: new Date('2026-04-12'), createdById: sales2.id },
+      })
+
+      const res = await request(app)
+        .get(`/api/achievements?createdById=${sales2.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].name).toBe('S2战绩')
+    })
+  })
+
   describe('GET /api/performance/ranking', () => {
     it('should return ranking sorted by amount', async () => {
       // Set targets

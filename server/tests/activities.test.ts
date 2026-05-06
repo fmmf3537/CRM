@@ -9,6 +9,7 @@ function authToken(user: { id: number; username: string; name: string; role: str
 
 const _admin = { id: 1, username: 'admin', name: '管理员', role: 'ADMIN' }
 const sales1 = { id: 2, username: 'sales1', name: '销售张三', role: 'SALES' }
+const sales2 = { id: 3, username: 'sales2', name: '销售李四', role: 'SALES' }
 
 describe('Activity API', () => {
   let customerId: number
@@ -199,6 +200,210 @@ describe('Activity API', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
+    })
+
+    it('should return 403 when non-owner non-manager tries to delete', async () => {
+      const activity = await prisma.activity.create({
+        data: { type: 'PHONE', title: '他人活动', time: new Date(), score: 1, createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .delete(`/api/activities/${activity.id}`)
+        .set('Authorization', `Bearer ${authToken(sales2)}`)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for non-existent activity', async () => {
+      const res = await request(app)
+        .delete('/api/activities/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 400 for invalid ID', async () => {
+      const res = await request(app)
+        .delete('/api/activities/invalid')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('GET /api/activities/:id', () => {
+    it('should return single activity detail', async () => {
+      const activity = await prisma.activity.create({
+        data: { type: 'VISIT', title: '详细活动', content: '详细内容', time: new Date(), score: 3, createdById: sales1.id, customerId },
+      })
+
+      const res = await request(app)
+        .get(`/api/activities/${activity.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.title).toBe('详细活动')
+      expect(res.body.content).toBe('详细内容')
+      expect(res.body.customer).toBeDefined()
+      expect(res.body.createdBy).toBeDefined()
+    })
+
+    it('should return 404 for non-existent activity', async () => {
+      const res = await request(app)
+        .get('/api/activities/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 400 for invalid ID', async () => {
+      const res = await request(app)
+        .get('/api/activities/invalid')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('GET /api/activities/by-customer/:customerId', () => {
+    it('should return activities for a specific customer', async () => {
+      await prisma.activity.createMany({
+        data: [
+          { type: 'PHONE', title: '跟进1', time: new Date(), score: 1, createdById: sales1.id, customerId },
+          { type: 'VISIT', title: '拜访1', time: new Date(), score: 3, createdById: sales1.id, customerId },
+        ],
+      })
+
+      const res = await request(app)
+        .get(`/api/activities/by-customer/${customerId}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body).toHaveLength(2)
+    })
+
+    it('should return empty array for customer with no activities', async () => {
+      const res = await request(app)
+        .get('/api/activities/by-customer/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body).toHaveLength(0)
+    })
+  })
+
+  describe('GET /api/activities/by-lead/:leadId', () => {
+    it('should return activities for a specific lead', async () => {
+      const lead = await prisma.lead.create({
+        data: { leadNo: 'L202601010001', name: '测试线索', contactName: '张三', status: 'NEW', assignStatus: 'UNASSIGNED' },
+      })
+
+      await prisma.activity.create({
+        data: { type: 'PHONE', title: '线索跟进', time: new Date(), score: 1, createdById: sales1.id, leadId: lead.id },
+      })
+
+      const res = await request(app)
+        .get(`/api/activities/by-lead/${lead.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body).toHaveLength(1)
+      expect(res.body[0].leadId).toBe(lead.id)
+    })
+
+    it('should return 400 for invalid leadId', async () => {
+      const res = await request(app)
+        .get('/api/activities/by-lead/invalid')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('GET /api/activities keyword search', () => {
+    beforeEach(async () => {
+      await prisma.activity.createMany({
+        data: [
+          { type: 'PHONE', title: '无人机客户沟通', content: '讨论技术方案', time: new Date(), score: 1, createdById: sales1.id },
+          { type: 'VISIT', title: '物流配送拜访', content: '洽谈配送方案', time: new Date(), score: 3, createdById: sales1.id },
+          { type: 'PHONE', title: '安防项目电话', content: '确认需求细节', time: new Date(), score: 1, createdById: sales1.id },
+        ],
+      })
+    })
+
+    it('should search by keyword in title', async () => {
+      const res = await request(app)
+        .get('/api/activities?keyword=无人机')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].title).toContain('无人机')
+    })
+
+    it('should search by keyword in content', async () => {
+      const res = await request(app)
+        .get('/api/activities?keyword=配送方案')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].content).toContain('配送方案')
+    })
+
+    it('should return empty when keyword matches nothing', async () => {
+      const res = await request(app)
+        .get('/api/activities?keyword=不存在的内容')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(0)
+    })
+  })
+
+  describe('GET /api/activities date filters', () => {
+    it('should filter by date range', async () => {
+      const pastDate = new Date('2025-01-15')
+      const recentDate = new Date()
+
+      await prisma.activity.createMany({
+        data: [
+          { type: 'PHONE', title: '旧活动', time: pastDate, score: 1, createdById: sales1.id },
+          { type: 'VISIT', title: '新活动', time: recentDate, score: 3, createdById: sales1.id },
+        ],
+      })
+
+      const res = await request(app)
+        .get(`/api/activities?startDate=2025-12-01&endDate=2030-12-31`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].title).toBe('新活动')
+    })
+  })
+
+  describe('PUT /api/activities/:id errors', () => {
+    it('should return 403 when non-owner non-manager tries to update', async () => {
+      const activity = await prisma.activity.create({
+        data: { type: 'PHONE', title: '他人活动', time: new Date(), score: 1, createdById: sales1.id },
+      })
+
+      const res = await request(app)
+        .put(`/api/activities/${activity.id}`)
+        .set('Authorization', `Bearer ${authToken(sales2)}`)
+        .send({ title: '篡改' })
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for non-existent activity', async () => {
+      const res = await request(app)
+        .put('/api/activities/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ title: '新标题' })
+
+      expect(res.status).toBe(404)
     })
   })
 })

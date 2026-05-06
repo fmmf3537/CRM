@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(docker-compose -f docker-compose.dev.yml up -d db-dev)",
+      "Bash(docker rm *)",
+      "Bash(npm run *)",
+      "Bash(npx prisma *)",
+      "Bash(npm i *)",
+      "Bash(npx tsc *)",
+      "Bash(npm test *)",
+      "Bash(docker exec *)",
+      "Bash(curl -s http://localhost:3006/api/health)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:5173)",
+      "Bash(curl -s -D - http://localhost:3006/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"password\"}')",
+      "Bash(curl -s http://localhost:3006/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"username\":\"test\",\"password\":\"1234\"}')",
+      "Bash(curl -s http://localhost:3006/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s http://localhost:3006/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"password\"}')",
+      "Bash(npx jest *)",
+      "Bash(curl *)",
+      "Bash(npx playwright *)",
+      "Bash(PLAYWRIGHT_TEST_BASE_URL=http://localhost:5175 npx playwright *)",
+      "Bash(awk '{print $1}')",
+      "Bash(taskkill //F //IM node.exe)"
+    ]
+  }
+}

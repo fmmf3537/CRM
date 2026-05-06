@@ -1,8 +1,12 @@
 import type { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import { prisma } from '../db'
+import { prisma } from '../db.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'skytech-crm-secret-key-2026'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is required')
+  process.exit(1)
+}
 
 export interface AuthRequest extends Request {
   user?: {
@@ -51,6 +55,11 @@ export function requireRole(...roles: string[]) {
     }
     next()
   }
+}
+
+export function canModify(req: AuthRequest, ownerId: number): boolean {
+  const user = req.user!
+  return user.id === ownerId || ['MANAGER', 'EXECUTIVE', 'ADMIN'].includes(user.role)
 }
 
 export async function seedUsers() {

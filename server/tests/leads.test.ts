@@ -228,6 +228,122 @@ describe('Lead API', () => {
     })
   })
 
+  describe('GET /api/leads/:id', () => {
+    it('should return single lead detail with assignee', async () => {
+      const lead = await prisma.lead.create({
+        data: { leadNo: 'L202601010020', name: '详情测试公司', contactName: '赵六', status: 'NEW', assignStatus: 'UNASSIGNED' },
+      })
+
+      const res = await request(app)
+        .get(`/api/leads/${lead.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.name).toBe('详情测试公司')
+      expect(res.body.leadNo).toBe('L202601010020')
+    })
+
+    it('should return 404 for non-existent lead', async () => {
+      const res = await request(app)
+        .get('/api/leads/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 400 for invalid ID', async () => {
+      const res = await request(app)
+        .get('/api/leads/invalid')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('PUT /api/leads/:id', () => {
+    it('should update lead fields', async () => {
+      const lead = await prisma.lead.create({
+        data: { leadNo: 'L202601010021', name: '更新前公司', contactName: '张三', status: 'NEW', assignStatus: 'UNASSIGNED', assigneeId: sales1.id },
+      })
+
+      const res = await request(app)
+        .put(`/api/leads/${lead.id}`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ name: '更新后公司', region: '深圳', budget: '200万' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.name).toBe('更新后公司')
+      expect(res.body.region).toBe('深圳')
+      expect(res.body.budget).toBe('200万')
+    })
+
+    it('should return 404 for non-existent lead', async () => {
+      const res = await request(app)
+        .put('/api/leads/99999')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ name: '不存在的公司' })
+
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 400 for invalid ID', async () => {
+      const res = await request(app)
+        .put('/api/leads/invalid')
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+        .send({ name: '测试' })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('should return 403 when non-owner non-manager tries to update', async () => {
+      const lead = await prisma.lead.create({
+        data: { leadNo: 'L202601010022', name: '锁定公司', contactName: '李四', status: 'NEW', assignStatus: 'ASSIGNED', assigneeId: sales1.id },
+      })
+
+      const res = await request(app)
+        .put(`/api/leads/${lead.id}`)
+        .set('Authorization', `Bearer ${authToken(sales2)}`)
+        .send({ name: '恶意篡改' })
+
+      expect(res.status).toBe(403)
+    })
+  })
+
+  describe('Notification side effects', () => {
+    it('should create notification when lead is assigned', async () => {
+      const lead = await prisma.lead.create({
+        data: { leadNo: 'L202601010025', name: '通知测试公司', contactName: '测试', status: 'NEW', assignStatus: 'UNASSIGNED' },
+      })
+
+      await request(app)
+        .post(`/api/leads/${lead.id}/assign`)
+        .set('Authorization', `Bearer ${authToken(manager)}`)
+        .send({ assigneeId: sales1.id })
+
+      const notifications = await prisma.notification.findMany({
+        where: { userId: sales1.id, type: 'NEW_LEAD_ASSIGNMENT' },
+      })
+      expect(notifications.length).toBeGreaterThanOrEqual(1)
+      expect(notifications[0].relatedId).toBe(lead.id)
+      expect(notifications[0].relatedType).toBe('LEAD')
+    })
+
+    it('should create notification when lead is claimed', async () => {
+      const lead = await prisma.lead.create({
+        data: { leadNo: 'L202601010026', name: '认领通知公司', contactName: '测试', status: 'NEW', assignStatus: 'UNASSIGNED' },
+      })
+
+      await request(app)
+        .post(`/api/leads/${lead.id}/claim`)
+        .set('Authorization', `Bearer ${authToken(sales1)}`)
+
+      const notifications = await prisma.notification.findMany({
+        where: { userId: sales1.id, type: 'NEW_LEAD_ASSIGNMENT' },
+      })
+      expect(notifications.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
   describe('POST /api/leads/batch-import', () => {
     it('should import leads from Excel buffer', async () => {
       const XLSX = await import('xlsx')

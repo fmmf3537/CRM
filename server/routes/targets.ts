@@ -113,4 +113,20 @@ router.put('/:id', requireRole('MANAGER', 'EXECUTIVE', 'ADMIN'), async (req: Aut
   }
 })
 
+// DELETE /api/targets/:id
+router.delete('/:id', requireRole('MANAGER', 'EXECUTIVE', 'ADMIN'), async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id, 10)
+  if (isNaN(id)) { res.status(400).json({ error: '无效的目标ID' }); return }
+
+  const existing = await prisma.target.findUnique({ where: { id } })
+  if (!existing) { res.status(404).json({ error: '目标不存在' }); return }
+
+  try {
+    await prisma.target.delete({ where: { id } })
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(500).json({ error: '删除目标失败', message: err.message })
+  }
+})
+
 export default router

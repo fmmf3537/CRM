@@ -72,4 +72,58 @@ router.post('/read-all', async (req: AuthRequest, res: Response) => {
   res.json({ success: true })
 })
 
+// DELETE /api/notifications/:id
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id, 10)
+  if (isNaN(id)) { res.status(400).json({ error: '无效的通知ID' }); return }
+
+  const notification = await prisma.notification.findUnique({ where: { id } })
+  if (!notification) { res.status(404).json({ error: '通知不存在' }); return }
+  if (notification.userId !== req.user!.id) {
+    res.status(403).json({ error: '无权操作此通知' })
+    return
+  }
+
+  await prisma.notification.delete({ where: { id } })
+  res.json({ success: true })
+})
+
+// POST /api/notifications/broadcast - Admin broadcast (ADMIN only)
+router.post('/broadcast', async (req: AuthRequest, res: Response) => {
+  if (req.user!.role !== 'ADMIN') {
+    res.status(403).json({ error: '仅管理员可以发送系统公告' })
+    return
+  }
+
+  const { title, content, userIds } = req.body
+  if (!title) {
+    res.status(400).json({ error: '标题为必填项' })
+    return
+  }
+
+  try {
+    let targetUserIds: number[] = []
+    if (userIds && Array.isArray(userIds) && userIds.length > 0) {
+      targetUserIds = userIds.map(Number)
+    } else {
+      const allUsers = await prisma.user.findMany({ select: { id: true } })
+      targetUserIds = allUsers.map((u) => u.id)
+    }
+
+    await prisma.notification.createMany({
+      data: targetUserIds.map((userId) => ({
+        userId,
+        type: 'SYSTEM_NOTICE',
+        title,
+        content: content || '',
+        relatedType: 'SYSTEM',
+      })),
+    })
+
+    res.json({ success: true, count: targetUserIds.length })
+  } catch (err: any) {
+    res.status(500).json({ error: '发送公告失败', message: err.message })
+  }
+})
+
 export default router

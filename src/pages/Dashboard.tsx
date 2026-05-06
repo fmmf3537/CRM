@@ -1,23 +1,67 @@
 import { TrendingUp, Users, FolderKanban, DollarSign, Activity } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import PerformanceCards from '../components/performance/PerformanceCards';
 import TopRanking from '../components/performance/TopRanking';
 
-const stats = [
-  { label: '总客户数', value: '1,284', change: '+12%', icon: Users, color: 'bg-blue-500' },
-  { label: '进行中项目', value: '42', change: '+5%', icon: FolderKanban, color: 'bg-emerald-500' },
-  { label: '本月收入', value: '¥2.4M', change: '+18%', icon: DollarSign, color: 'bg-amber-500' },
-  { label: '设备在线率', value: '98.2%', change: '+0.5%', icon: Activity, color: 'bg-purple-500' },
-];
+const API_BASE = 'http://localhost:3006/api';
 
-const recentActivities = [
-  { action: '新客户签约', detail: '华远航空科技有限公司', time: '10分钟前' },
-  { action: '项目交付', detail: '农业植保无人机编队系统', time: '1小时前' },
-  { action: '设备报修', detail: 'ZT-800 巡检无人机 #0321', time: '2小时前' },
-  { action: '合同续签', detail: '城市安防监控项目', time: '3小时前' },
-  { action: '新订单', detail: '物流配送无人机 x20', time: '5小时前' },
-];
+function getToken() {
+  return localStorage.getItem('crm_token') || '';
+}
+
+interface StatCard {
+  label: string;
+  value: string;
+  change: string;
+  icon: any;
+  color: string;
+}
 
 export default function Dashboard() {
+  const [stats, setStats] = useState<StatCard[]>([
+    { label: '总客户数', value: '--', change: '加载中...', icon: Users, color: 'bg-blue-500' },
+    { label: '进行中商机', value: '--', change: '加载中...', icon: FolderKanban, color: 'bg-emerald-500' },
+    { label: '本月签约额', value: '--', change: '加载中...', icon: DollarSign, color: 'bg-amber-500' },
+    { label: '本月活动数', value: '--', change: '加载中...', icon: Activity, color: 'bg-purple-500' },
+  ]);
+
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
+
+  useEffect(() => {
+    const headers = { Authorization: `Bearer ${getToken()}` };
+
+    // Fetch summary data in parallel
+    Promise.all([
+      fetch(`${API_BASE}/customers?pageSize=1`, { headers }).then((r) => r.json()),
+      fetch(`${API_BASE}/opportunities?pageSize=1&status=IN_PROGRESS`, { headers }).then((r) => r.json()),
+      fetch(`${API_BASE}/performance/summary`, { headers }).then((r) => r.json()),
+      fetch(`${API_BASE}/activities?pageSize=5`, { headers }).then((r) => r.json()),
+    ])
+      .then(([customersRes, oppsRes, perfRes, activitiesRes]) => {
+        const totalCustomers = customersRes.pagination?.total || 0;
+        const activeOpps = oppsRes.pagination?.total || 0;
+        const dealAmount = perfRes?.data?.totalDealAmount || 0;
+        const monthActivities = activitiesRes.pagination?.total || 0;
+
+        setStats([
+          { label: '总客户数', value: totalCustomers.toLocaleString(), change: '', icon: Users, color: 'bg-blue-500' },
+          { label: '进行中商机', value: activeOpps.toLocaleString(), change: '', icon: FolderKanban, color: 'bg-emerald-500' },
+          { label: '总签约额', value: `¥${(dealAmount / 10000).toFixed(1)}万`, change: '', icon: DollarSign, color: 'bg-amber-500' },
+          { label: '本月活动', value: monthActivities.toString(), change: '', icon: Activity, color: 'bg-purple-500' },
+        ]);
+
+        const activities = activitiesRes.data || [];
+        setRecentActivities(
+          activities.map((a: any) => ({
+            action: a.type || '活动',
+            detail: a.title || '',
+            time: new Date(a.createdAt).toLocaleString('zh-CN'),
+          }))
+        );
+      })
+      .catch(console.error);
+  }, []);
+
   return (
     <div className="space-y-6">
       <div>
@@ -45,11 +89,13 @@ export default function Dashboard() {
                   <Icon size={20} />
                 </div>
               </div>
-              <div className="flex items-center gap-1 mt-3">
-                <TrendingUp size={14} className="text-emerald-500" />
-                <span className="text-sm font-medium text-emerald-600">{stat.change}</span>
-                <span className="text-sm text-slate-400">较上月</span>
-              </div>
+              {stat.change && (
+                <div className="flex items-center gap-1 mt-3">
+                  <TrendingUp size={14} className="text-emerald-500" />
+                  <span className="text-sm font-medium text-emerald-600">{stat.change}</span>
+                  <span className="text-sm text-slate-400">较上月</span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -60,46 +106,26 @@ export default function Dashboard() {
 
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="px-6 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-900">业务趋势</h3>
-          </div>
-          <div className="p-6">
-            <div className="h-64 flex items-end justify-between gap-3">
-              {[45, 62, 38, 75, 55, 88, 72, 95, 68, 82, 58, 90].map((h, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                  <div
-                    className="w-full bg-primary-100 rounded-t-md relative group"
-                    style={{ height: `${h}%` }}
-                  >
-                    <div
-                      className="absolute bottom-0 left-0 right-0 bg-primary-500 rounded-t-md transition-all group-hover:bg-primary-600"
-                      style={{ height: '100%' }}
-                    ></div>
-                  </div>
-                  <span className="text-xs text-slate-400">{i + 1}月</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-100">
             <h3 className="font-semibold text-slate-900">最近动态</h3>
           </div>
           <div className="p-4 space-y-1">
-            {recentActivities.map((activity, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors"
-              >
-                <div className="w-2 h-2 rounded-full bg-primary-400 mt-2 shrink-0"></div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900">{activity.action}</p>
-                  <p className="text-sm text-slate-500 truncate">{activity.detail}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{activity.time}</p>
+            {recentActivities.length === 0 ? (
+              <p className="text-sm text-slate-400 p-3 text-center">暂无活动记录</p>
+            ) : (
+              recentActivities.map((activity, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  <div className="w-2 h-2 rounded-full bg-primary-400 mt-2 shrink-0"></div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{activity.action}</p>
+                    <p className="text-sm text-slate-500 truncate">{activity.detail}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{activity.time}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
