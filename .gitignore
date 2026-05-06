@@ -34,3 +34,7 @@ e2e/.auth/
 *.db-shm
 server.log
 .env
+
+# Runtime data
+backups/
+test-results/

@@ -18,7 +18,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-const API_BASE = 'http://localhost:3006/api'
+const API_BASE = '/api'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -49,21 +49,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (username: string, password: string): Promise<boolean> => {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    })
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
 
-    if (!res.ok) {
+      if (!res.ok) {
+        return false
+      }
+
+      const data = await res.json()
+      setUser(data.user)
+      setToken(data.token)
+      localStorage.setItem('crm_token', data.token)
+      return true
+    } catch {
       return false
     }
-
-    const data = await res.json()
-    setUser(data.user)
-    setToken(data.token)
-    localStorage.setItem('crm_token', data.token)
-    return true
   }
 
   const logout = () => {

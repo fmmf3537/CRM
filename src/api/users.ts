@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3006/api'
+const API_BASE = '/api'
 
 function getToken() {
   return localStorage.getItem('crm_token') || ''

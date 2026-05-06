@@ -26,14 +26,17 @@ export default function Login() {
     }
 
     setIsSubmitting(true);
-    const success = await login(username, password);
-    setIsSubmitting(false);
-
-    if (success) {
-      navigate('/', { replace: true });
-    } else {
-      setError('登录失败，请检查用户名和密码');
+    try {
+      const success = await login(username, password);
+      if (success) {
+        navigate('/', { replace: true });
+      } else {
+        setError('登录失败，请检查用户名和密码');
+      }
+    } catch {
+      setError('网络错误，请检查网络连接或稍后重试');
     }
+    setIsSubmitting(false);
   };
 
   return (
