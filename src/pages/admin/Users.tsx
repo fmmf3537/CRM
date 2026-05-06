@@ -180,6 +180,8 @@ export default function AdminUsers() {
               <div>
                 <label className="mb-1 block text-sm font-medium">用户名 *</label>
                 <input
+                  name="username"
+                  placeholder="请输入用户名"
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   value={form.username}
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
@@ -190,6 +192,8 @@ export default function AdminUsers() {
               <div>
                 <label className="mb-1 block text-sm font-medium">姓名 *</label>
                 <input
+                  name="name"
+                  placeholder="请输入姓名"
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -200,7 +204,9 @@ export default function AdminUsers() {
                 <div>
                   <label className="mb-1 block text-sm font-medium">密码 *</label>
                   <input
+                    name="password"
                     type="password"
+                    placeholder="请输入密码"
                     className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
